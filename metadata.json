@@ -1,0 +1,7 @@
+{
+  "name": "Hanaano Factory OS",
+  "description": "Intelligent operations management for ice factories, featuring sales tracking, fuel monitoring, and expense logging with industrial-grade UI.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
