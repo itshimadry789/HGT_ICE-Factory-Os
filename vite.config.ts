@@ -8,6 +8,7 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        strictPort: true, // Fail if port is already in use instead of trying next port
       },
       plugins: [react()],
       define: {

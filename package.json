@@ -4,20 +4,29 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "npm run dev:kill-ports && concurrently -k -n \"backend,frontend\" -c \"blue,green\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:kill-ports": "lsof -ti:3000 | xargs kill -9 2>/dev/null || true; lsof -ti:3001 | xargs kill -9 2>/dev/null || true; sleep 1",
+    "dev:frontend": "wait-on tcp:3001 --timeout 60000 && vite",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend-only": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "install:all": "npm install && cd backend && npm install",
+    "start": "npm run dev"
   },
   "dependencies": {
-    "react-dom": "^19.2.3",
+    "@supabase/supabase-js": "^2.89.0",
+    "lucide-react": "^0.562.0",
     "react": "^19.2.3",
-    "recharts": "^3.6.0",
-    "lucide-react": "^0.562.0"
+    "react-dom": "^19.2.3",
+    "recharts": "^3.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^8.2.2",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "wait-on": "^7.2.0"
   }
 }

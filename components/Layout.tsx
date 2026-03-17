@@ -4,16 +4,20 @@ import { ViewState } from '../types';
 import { 
   LayoutDashboard, PlusCircle, Fuel, Receipt, ArrowLeft, BarChart3, 
   Settings, ShieldCheck, UserCircle, MessageSquare, 
-  FileText, Zap, Shield, HelpCircle, Bell, Search, Menu, Calculator, Droplets, X, ChevronRight, Snowflake
+  FileText, Zap, Shield, HelpCircle, Bell, Search, Menu, Calculator, Droplets, X, ChevronRight, Snowflake, LogOut
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import AiToolbox from '../src/components/AiAssistant/AiToolbox';
 
 interface LayoutProps {
   children: React.ReactNode;
   currentView: ViewState;
   setView: (view: ViewState) => void;
+  isDarkMode: boolean;
+  toggleDarkMode: () => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, currentView, setView }) => {
+const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, isDarkMode, toggleDarkMode }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const isFormView = currentView !== 'DASHBOARD' && currentView !== 'REPORTS' && currentView !== 'CUSTOMERS';
 
@@ -34,9 +38,9 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView }) => {
           : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
       }`}
     >
-      <Icon className={`w-4 h-4 ${currentView === id ? 'text-sky-600' : 'text-slate-400'}`} />
+      <Icon className={`w-4 h-4 ${currentView === id ? 'text-teal-600' : 'text-slate-400'}`} />
       <span>{label}</span>
-      {currentView === id && <ChevronRight className="w-3 h-3 ml-auto text-sky-600" />}
+      {currentView === id && <ChevronRight className="w-3 h-3 ml-auto text-teal-600" />}
     </button>
   );
 
@@ -44,17 +48,12 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView }) => {
   const HanaanoLogo = () => (
     <div className="flex items-center gap-3 select-none">
       {/* Visual HGT Mark Simulation */}
-      <div className="relative w-10 h-10 flex items-center justify-center bg-white rounded-lg shadow-sm border border-slate-100 overflow-hidden">
+      <div className="relative w-14 h-14 flex items-center justify-center bg-white rounded-lg shadow-sm border border-slate-100 overflow-hidden">
          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-teal-500/10 to-blue-600/10"></div>
-         <span className="text-base font-black bg-clip-text text-transparent bg-gradient-to-br from-amber-500 via-teal-500 to-blue-700 tracking-tighter transform -skew-x-6">
+         <span className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-br from-amber-500 via-teal-500 to-blue-700 tracking-tighter transform -skew-x-6">
            HGT
          </span>
       </div>
-      
-      {/* Brand Name Only - Clean */}
-      <h1 className="text-2xl font-black tracking-tight text-[#0055ff] font-sans leading-none">
-        HANAANO
-      </h1>
     </div>
   );
 
@@ -87,6 +86,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView }) => {
                   <NavItem id="PRODUCTION_LOG" label="Production Log" icon={Snowflake} />
                   <NavItem id="LOG_FUEL" label="Generator Log" icon={Droplets} />
                   <NavItem id="ADD_EXPENSE" label="Expense Registry" icon={Receipt} />
+                  <NavItem id="FIXED_COSTS" label="Fixed Costs" icon={FileText} />
                   <NavItem id="CUSTOMERS" label="Customer Ledger" icon={UserCircle} />
                 </nav>
               </div>
@@ -127,13 +127,14 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView }) => {
             <NavItem id="PRODUCTION_LOG" label="Production Log" icon={Snowflake} />
             <NavItem id="LOG_FUEL" label="Generator Log" icon={Droplets} />
             <NavItem id="ADD_EXPENSE" label="Expense Registry" icon={Receipt} />
+            <NavItem id="FIXED_COSTS" label="Fixed Costs" icon={FileText} />
             <NavItem id="CUSTOMERS" label="Customer Ledger" icon={UserCircle} />
           </nav>
         </div>
 
         <div className="p-6 mt-auto border-t border-slate-100">
           <div className="bg-slate-50 p-4 rounded-xl flex items-center gap-3 border border-slate-100">
-             <div className="w-8 h-8 bg-sky-100 rounded-lg flex items-center justify-center text-sky-600">
+             <div className="w-8 h-8 bg-gradient-to-br from-amber-100 via-teal-100 to-blue-100 rounded-lg flex items-center justify-center text-teal-600">
                 <ShieldCheck className="w-5 h-5" />
              </div>
              <div>
@@ -167,7 +168,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView }) => {
                 <input 
                   type="text" 
                   placeholder="Search ledger, clients, or assets..." 
-                  className="w-full bg-slate-50 border-none rounded-xl pl-10 pr-4 py-2.5 text-sm font-medium focus:ring-2 focus:ring-sky-200 outline-none transition-all placeholder:text-slate-400"
+                  className="w-full bg-slate-50 border-none rounded-xl pl-10 pr-4 py-2.5 text-sm font-medium focus:ring-2 focus:ring-teal-200 outline-none transition-all placeholder:text-slate-400"
                 />
               </div>
             )}
@@ -178,9 +179,33 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView }) => {
           </div>
           
           <div className="flex items-center gap-4 md:gap-6">
+            {/* Dark mode toggle */}
+            <button
+              onClick={toggleDarkMode}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold uppercase tracking-wide text-slate-500 hover:text-slate-900 hover:bg-slate-50 active-tap"
+            >
+              <span
+                className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-black ${
+                  isDarkMode ? 'bg-amber-400 text-slate-900' : 'bg-slate-900 text-amber-300'
+                }`}
+              >
+                {isDarkMode ? '☀' : '☾'}
+              </span>
+              <span>{isDarkMode ? 'Light' : 'Dark'} Mode</span>
+            </button>
             <button className="relative p-2 text-slate-400 hover:text-slate-900 transition-colors">
               <Bell className="w-5 h-5" />
               <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 border-2 border-white rounded-full"></span>
+            </button>
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut();
+                window.location.reload();
+              }}
+              className="p-2 text-slate-400 hover:text-slate-900 transition-colors"
+              title="Sign Out"
+            >
+              <LogOut className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-3 pl-6 border-l border-slate-200">
                <div className="text-right hidden sm:block">
@@ -194,16 +219,19 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView }) => {
           </div>
         </header>
 
-        <main className="p-4 md:p-10 w-full mx-auto max-w-7xl">
+        <main className="p-4 md:p-6 lg:p-8 xl:p-10 w-full mx-auto max-w-[1920px]">
           {children}
         </main>
+        
+        {/* AI Orchestrator Toolbox */}
+        <AiToolbox />
       </div>
 
       {/* --- MOBILE NAV BOTTOM --- */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-2 flex justify-between items-end z-50 pb-safe shadow-[0_-5px_20px_-5px_rgba(0,0,0,0.05)]">
         <button 
           onClick={() => handleSetView('DASHBOARD')} 
-          className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all min-w-[60px] ${currentView === 'DASHBOARD' ? 'text-sky-600' : 'text-slate-400'}`}
+          className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all min-w-[60px] ${currentView === 'DASHBOARD' ? 'text-teal-600' : 'text-slate-400'}`}
         >
           <LayoutDashboard className={`w-6 h-6 ${currentView === 'DASHBOARD' ? 'fill-current' : ''}`} />
           <span className="text-[9px] font-bold tracking-wide">Home</span>
@@ -211,7 +239,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView }) => {
 
         <button 
           onClick={() => handleSetView('REPORTS')} 
-          className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all min-w-[60px] ${currentView === 'REPORTS' ? 'text-sky-600' : 'text-slate-400'}`}
+          className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all min-w-[60px] ${currentView === 'REPORTS' ? 'text-teal-600' : 'text-slate-400'}`}
         >
           <BarChart3 className={`w-6 h-6 ${currentView === 'REPORTS' ? 'fill-current' : ''}`} />
           <span className="text-[9px] font-bold tracking-wide">Reports</span>
@@ -220,14 +248,14 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView }) => {
         {/* Floating Action Button for Sales */}
         <button 
           onClick={() => handleSetView('NEW_SALE')} 
-          className="relative -top-6 bg-slate-900 text-white w-14 h-14 rounded-2xl shadow-xl shadow-sky-900/30 active:scale-95 transition-all border-4 border-slate-50 flex items-center justify-center group"
+          className="relative -top-6 bg-gradient-to-br from-amber-600 via-teal-600 to-blue-700 text-white w-14 h-14 rounded-2xl shadow-xl shadow-teal-900/30 active:scale-95 transition-all border-4 border-slate-50 flex items-center justify-center group"
         >
           <Calculator className="w-6 h-6 group-hover:rotate-12 transition-transform" />
         </button>
 
         <button 
           onClick={() => handleSetView('CUSTOMERS')} 
-          className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all min-w-[60px] ${currentView === 'CUSTOMERS' ? 'text-sky-600' : 'text-slate-400'}`}
+          className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all min-w-[60px] ${currentView === 'CUSTOMERS' ? 'text-teal-600' : 'text-slate-400'}`}
         >
           <UserCircle className={`w-6 h-6 ${currentView === 'CUSTOMERS' ? 'fill-current' : ''}`} />
           <span className="text-[9px] font-bold tracking-wide">Ledger</span>

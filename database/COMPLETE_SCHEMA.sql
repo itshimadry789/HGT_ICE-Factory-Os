@@ -1,0 +1,689 @@
+-- ============================================
+-- HGT ICE FACTORY OS - COMPLETE DATABASE SCHEMA
+-- ============================================
+-- 
+-- RUN THIS ENTIRE FILE IN SUPABASE SQL EDITOR
+-- This creates all tables, indexes, views, functions, triggers, and RLS policies
+--
+-- Steps:
+-- 1. Go to Supabase Dashboard > SQL Editor
+-- 2. Create a new query
+-- 3. Copy and paste this entire file
+-- 4. Click "Run" to execute
+--
+-- ============================================
+
+
+-- ============================================
+-- STEP 1: DROP EXISTING OBJECTS (Clean Start)
+-- ============================================
+-- Uncomment these lines if you want to start completely fresh
+-- WARNING: This will delete ALL existing data!
+
+-- DROP TABLE IF EXISTS audit_log CASCADE;
+-- DROP TABLE IF EXISTS alerts CASCADE;
+-- DROP TABLE IF EXISTS daily_metrics CASCADE;
+-- DROP TABLE IF EXISTS production_logs CASCADE;
+-- DROP TABLE IF EXISTS fuel_logs CASCADE;
+-- DROP TABLE IF EXISTS expenses CASCADE;
+-- DROP TABLE IF EXISTS payments CASCADE;
+-- DROP TABLE IF EXISTS sales CASCADE;
+-- DROP TABLE IF EXISTS customers CASCADE;
+-- DROP TABLE IF EXISTS inventory CASCADE;
+
+-- DROP VIEW IF EXISTS dashboard_summary CASCADE;
+-- DROP VIEW IF EXISTS customer_risk_summary CASCADE;
+
+-- DROP FUNCTION IF EXISTS update_customer_credit CASCADE;
+-- DROP FUNCTION IF EXISTS update_credit_after_payment CASCADE;
+-- DROP FUNCTION IF EXISTS check_fuel_efficiency CASCADE;
+-- DROP FUNCTION IF EXISTS update_daily_metrics CASCADE;
+
+
+-- ============================================
+-- STEP 2: CREATE TABLES
+-- ============================================
+
+-- --------------------------------------------
+-- 2.1 CUSTOMERS TABLE
+-- Core table for customer management
+-- --------------------------------------------
+CREATE TABLE IF NOT EXISTS customers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    phone_number VARCHAR(50),
+    email VARCHAR(255),
+    address TEXT,
+    total_credit_due DECIMAL(15,2) DEFAULT 0,
+    credit_limit DECIMAL(15,2) DEFAULT 10000000,
+    last_payment_date TIMESTAMPTZ,
+    days_overdue INTEGER DEFAULT 0,
+    risk_level VARCHAR(20) DEFAULT 'LOW' CHECK (risk_level IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
+    notes TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for customers
+CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone_number);
+CREATE INDEX IF NOT EXISTS idx_customers_credit ON customers(total_credit_due DESC);
+CREATE INDEX IF NOT EXISTS idx_customers_risk ON customers(risk_level);
+CREATE INDEX IF NOT EXISTS idx_customers_active ON customers(is_active);
+
+-- --------------------------------------------
+-- 2.2 SALES TABLE
+-- Core table for all sales transactions
+-- --------------------------------------------
+CREATE TABLE IF NOT EXISTS sales (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+    quantity_blocks INTEGER NOT NULL CHECK (quantity_blocks > 0),
+    unit_price DECIMAL(12,2) NOT NULL,
+    total_amount DECIMAL(15,2) NOT NULL,
+    payment_status VARCHAR(20) NOT NULL CHECK (payment_status IN ('CASH', 'CREDIT', 'PARTIAL')),
+    amount_paid DECIMAL(15,2) DEFAULT 0,
+    balance_due DECIMAL(15,2) DEFAULT 0,
+    notes TEXT,
+    sold_by VARCHAR(255),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for sales
+CREATE INDEX IF NOT EXISTS idx_sales_customer ON sales(customer_id);
+CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sales_status ON sales(payment_status);
+
+-- --------------------------------------------
+-- 2.3 PAYMENTS TABLE
+-- Track credit payments from customers
+-- --------------------------------------------
+CREATE TABLE IF NOT EXISTS payments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
+    sale_id UUID REFERENCES sales(id) ON DELETE SET NULL,
+    amount DECIMAL(15,2) NOT NULL CHECK (amount > 0),
+    payment_method VARCHAR(50) DEFAULT 'CASH' CHECK (payment_method IN ('CASH', 'BANK_TRANSFER', 'MOBILE_MONEY')),
+    reference_number VARCHAR(100),
+    notes TEXT,
+    received_by VARCHAR(255),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for payments
+CREATE INDEX IF NOT EXISTS idx_payments_customer ON payments(customer_id);
+CREATE INDEX IF NOT EXISTS idx_payments_date ON payments(created_at DESC);
+
+-- --------------------------------------------
+-- 2.4 EXPENSES TABLE
+-- Track all operational expenses
+-- --------------------------------------------
+CREATE TABLE IF NOT EXISTS expenses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    category VARCHAR(50) NOT NULL CHECK (category IN ('FUEL', 'FOOD', 'SALARY', 'MAINTENANCE', 'UTILITIES', 'SUPPLIES', 'OTHER')),
+    description TEXT NOT NULL,
+    amount DECIMAL(15,2) NOT NULL CHECK (amount > 0),
+    currency VARCHAR(10) DEFAULT 'SSP',
+    vendor VARCHAR(255),
+    receipt_number VARCHAR(100),
+    approved_by VARCHAR(255),
+    notes TEXT,
+    expense_date DATE DEFAULT CURRENT_DATE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for expenses
+CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category);
+CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date DESC);
+
+-- --------------------------------------------
+-- 2.5 FUEL LOGS TABLE
+-- Track fuel consumption and efficiency
+-- --------------------------------------------
+CREATE TABLE IF NOT EXISTS fuel_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    liters_added DECIMAL(10,2) NOT NULL CHECK (liters_added > 0),
+    cost_per_liter DECIMAL(10,2) NOT NULL CHECK (cost_per_liter > 0),
+    total_cost DECIMAL(15,2) NOT NULL,
+    generator_hours_run DECIMAL(6,2),
+    boxes_produced INTEGER DEFAULT 0,
+    fuel_efficiency DECIMAL(6,3),
+    efficiency_variance DECIMAL(6,2),
+    alert_level VARCHAR(20) DEFAULT 'NORMAL' CHECK (alert_level IN ('NORMAL', 'WARNING', 'CRITICAL')),
+    supplier VARCHAR(255),
+    notes TEXT,
+    logged_by VARCHAR(255),
+    fuel_date DATE DEFAULT CURRENT_DATE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for fuel_logs
+CREATE INDEX IF NOT EXISTS idx_fuel_date ON fuel_logs(fuel_date DESC);
+CREATE INDEX IF NOT EXISTS idx_fuel_alert ON fuel_logs(alert_level);
+
+-- --------------------------------------------
+-- 2.6 PRODUCTION LOGS TABLE
+-- Track daily ice production
+-- --------------------------------------------
+CREATE TABLE IF NOT EXISTS production_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    quantity_produced INTEGER NOT NULL CHECK (quantity_produced >= 0),
+    waste_blocks INTEGER DEFAULT 0 CHECK (waste_blocks >= 0),
+    good_blocks INTEGER GENERATED ALWAYS AS (quantity_produced - waste_blocks) STORED,
+    waste_percentage DECIMAL(5,2),
+    shift VARCHAR(20) CHECK (shift IN ('Morning', 'Afternoon', 'Night')),
+    runtime_hours DECIMAL(6,2),
+    machine_issues TEXT,
+    notes TEXT,
+    logged_by VARCHAR(255),
+    production_date DATE DEFAULT CURRENT_DATE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for production_logs
+CREATE INDEX IF NOT EXISTS idx_production_date ON production_logs(production_date DESC);
+CREATE INDEX IF NOT EXISTS idx_production_shift ON production_logs(shift);
+
+-- --------------------------------------------
+-- 2.7 DAILY METRICS TABLE
+-- Aggregated daily statistics
+-- --------------------------------------------
+CREATE TABLE IF NOT EXISTS daily_metrics (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    metric_date DATE UNIQUE NOT NULL DEFAULT CURRENT_DATE,
+    
+    -- Revenue metrics
+    total_revenue DECIMAL(15,2) DEFAULT 0,
+    cash_revenue DECIMAL(15,2) DEFAULT 0,
+    credit_revenue DECIMAL(15,2) DEFAULT 0,
+    
+    -- Sales metrics
+    total_sales_count INTEGER DEFAULT 0,
+    total_blocks_sold INTEGER DEFAULT 0,
+    average_sale_value DECIMAL(15,2) DEFAULT 0,
+    
+    -- Production metrics
+    blocks_produced INTEGER DEFAULT 0,
+    blocks_wasted INTEGER DEFAULT 0,
+    production_efficiency DECIMAL(5,2) DEFAULT 0,
+    
+    -- Cost metrics
+    fuel_cost DECIMAL(15,2) DEFAULT 0,
+    fuel_liters DECIMAL(10,2) DEFAULT 0,
+    other_expenses DECIMAL(15,2) DEFAULT 0,
+    total_expenses DECIMAL(15,2) DEFAULT 0,
+    
+    -- Profitability
+    gross_profit DECIMAL(15,2) DEFAULT 0,
+    net_liquidity DECIMAL(15,2) DEFAULT 0,
+    cost_per_block DECIMAL(10,2) DEFAULT 0,
+    
+    -- Efficiency
+    fuel_efficiency DECIMAL(6,3) DEFAULT 0,
+    
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for daily_metrics
+CREATE INDEX IF NOT EXISTS idx_metrics_date ON daily_metrics(metric_date DESC);
+
+-- --------------------------------------------
+-- 2.8 ALERTS TABLE
+-- System alerts and notifications
+-- --------------------------------------------
+CREATE TABLE IF NOT EXISTS alerts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    alert_type VARCHAR(50) NOT NULL CHECK (alert_type IN ('FUEL_EFFICIENCY', 'CREDIT_LIMIT', 'LOW_STOCK', 'OVERDUE_PAYMENT', 'SYSTEM')),
+    priority VARCHAR(20) NOT NULL CHECK (priority IN ('low', 'medium', 'high')),
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    related_entity_type VARCHAR(50),
+    related_entity_id UUID,
+    is_read BOOLEAN DEFAULT false,
+    is_resolved BOOLEAN DEFAULT false,
+    resolved_at TIMESTAMPTZ,
+    resolved_by VARCHAR(255),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for alerts
+CREATE INDEX IF NOT EXISTS idx_alerts_unread ON alerts(is_read, priority);
+CREATE INDEX IF NOT EXISTS idx_alerts_type ON alerts(alert_type);
+CREATE INDEX IF NOT EXISTS idx_alerts_date ON alerts(created_at DESC);
+
+-- --------------------------------------------
+-- 2.9 INVENTORY TABLE
+-- Track stock levels
+-- --------------------------------------------
+CREATE TABLE IF NOT EXISTS inventory (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    item_name VARCHAR(255) NOT NULL,
+    current_stock INTEGER DEFAULT 0,
+    minimum_stock INTEGER DEFAULT 10,
+    unit VARCHAR(50) DEFAULT 'blocks',
+    last_restocked_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- --------------------------------------------
+-- 2.10 AUDIT LOG TABLE
+-- Track all changes for accountability
+-- --------------------------------------------
+CREATE TABLE IF NOT EXISTS audit_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    table_name VARCHAR(100) NOT NULL,
+    record_id UUID NOT NULL,
+    action VARCHAR(20) NOT NULL CHECK (action IN ('INSERT', 'UPDATE', 'DELETE')),
+    old_values JSONB,
+    new_values JSONB,
+    changed_by VARCHAR(255),
+    changed_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for audit_log
+CREATE INDEX IF NOT EXISTS idx_audit_table ON audit_log(table_name, record_id);
+CREATE INDEX IF NOT EXISTS idx_audit_date ON audit_log(changed_at DESC);
+
+
+-- ============================================
+-- STEP 3: CREATE VIEWS
+-- ============================================
+
+-- --------------------------------------------
+-- 3.1 Dashboard Summary View
+-- Provides real-time dashboard metrics
+-- --------------------------------------------
+CREATE OR REPLACE VIEW dashboard_summary AS
+SELECT
+    COALESCE(dm.metric_date, CURRENT_DATE) as report_date,
+    COALESCE(dm.total_revenue, 0) as total_revenue,
+    COALESCE(dm.cash_revenue, 0) as cash_revenue,
+    COALESCE(dm.credit_revenue, 0) as credit_revenue,
+    COALESCE(dm.total_blocks_sold, 0) as units_sold,
+    COALESCE(dm.total_expenses, 0) as total_expenses,
+    COALESCE(dm.net_liquidity, 0) as net_profit_ssp,
+    COALESCE(dm.cost_per_block, 0) as efficiency_rating,
+    COALESCE(dm.fuel_efficiency, 0) as fuel_efficiency,
+    (SELECT COUNT(*) FROM customers WHERE total_credit_due > 0 AND is_active = true) as overdue_clients,
+    (SELECT COALESCE(SUM(total_credit_due), 0) FROM customers WHERE is_active = true) as total_outstanding,
+    (SELECT COUNT(*) FROM alerts WHERE is_read = false) as unread_alerts
+FROM daily_metrics dm
+WHERE dm.metric_date = CURRENT_DATE
+LIMIT 1;
+
+-- --------------------------------------------
+-- 3.2 Customer Risk Summary View
+-- Customer credit risk analysis
+-- --------------------------------------------
+CREATE OR REPLACE VIEW customer_risk_summary AS
+SELECT
+    c.id,
+    c.name,
+    c.phone_number,
+    c.total_credit_due,
+    c.credit_limit,
+    c.last_payment_date,
+    CASE
+        WHEN c.last_payment_date IS NULL AND c.total_credit_due > 0 THEN 90
+        ELSE COALESCE(EXTRACT(DAY FROM NOW() - c.last_payment_date)::INTEGER, 0)
+    END as days_since_payment,
+    CASE
+        WHEN c.total_credit_due = 0 THEN 'PAID'
+        WHEN c.total_credit_due > c.credit_limit THEN 'CRITICAL'
+        WHEN EXTRACT(DAY FROM NOW() - COALESCE(c.last_payment_date, c.created_at)) > 60 THEN 'HIGH'
+        WHEN EXTRACT(DAY FROM NOW() - COALESCE(c.last_payment_date, c.created_at)) > 30 THEN 'MEDIUM'
+        ELSE 'LOW'
+    END as calculated_risk,
+    (SELECT COUNT(*) FROM sales WHERE customer_id = c.id) as total_transactions,
+    (SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE customer_id = c.id) as lifetime_value
+FROM customers c
+WHERE c.is_active = true
+ORDER BY c.total_credit_due DESC;
+
+
+-- ============================================
+-- STEP 4: CREATE FUNCTIONS
+-- ============================================
+
+-- --------------------------------------------
+-- 4.1 Update Customer Credit After Sale
+-- Automatically updates customer balance for credit sales
+-- --------------------------------------------
+CREATE OR REPLACE FUNCTION update_customer_credit()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.payment_status = 'CREDIT' OR NEW.payment_status = 'PARTIAL' THEN
+        UPDATE customers
+        SET 
+            total_credit_due = total_credit_due + NEW.balance_due,
+            updated_at = NOW()
+        WHERE id = NEW.customer_id;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- --------------------------------------------
+-- 4.2 Update Customer Credit After Payment
+-- Reduces customer balance when payment is received
+-- --------------------------------------------
+CREATE OR REPLACE FUNCTION update_credit_after_payment()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE customers
+    SET 
+        total_credit_due = GREATEST(0, total_credit_due - NEW.amount),
+        last_payment_date = NOW(),
+        updated_at = NOW()
+    WHERE id = NEW.customer_id;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- --------------------------------------------
+-- 4.3 Check Fuel Efficiency
+-- Calculates efficiency and creates alerts for abnormal consumption
+-- --------------------------------------------
+CREATE OR REPLACE FUNCTION check_fuel_efficiency()
+RETURNS TRIGGER AS $$
+DECLARE
+    normal_efficiency DECIMAL := 1.1;
+    variance DECIMAL;
+BEGIN
+    IF NEW.boxes_produced > 0 THEN
+        NEW.fuel_efficiency := NEW.liters_added / NEW.boxes_produced;
+        variance := ((NEW.fuel_efficiency - normal_efficiency) / normal_efficiency) * 100;
+        NEW.efficiency_variance := variance;
+        
+        IF NEW.fuel_efficiency > 1.2 THEN
+            NEW.alert_level := 'CRITICAL';
+            -- Create alert for abnormal consumption
+            INSERT INTO alerts (alert_type, priority, title, message, related_entity_type, related_entity_id)
+            VALUES (
+                'FUEL_EFFICIENCY',
+                'high',
+                'Abnormal Fuel Consumption',
+                'Fuel efficiency is ' || ROUND(variance::numeric, 1) || '% above normal. Expected: ' || 
+                ROUND((NEW.boxes_produced * normal_efficiency)::numeric, 0) || 'L, Actual: ' || NEW.liters_added || 'L',
+                'fuel_log',
+                NEW.id
+            );
+        ELSIF NEW.fuel_efficiency > 1.15 THEN
+            NEW.alert_level := 'WARNING';
+        ELSE
+            NEW.alert_level := 'NORMAL';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- --------------------------------------------
+-- 4.4 Update Daily Metrics
+-- Recalculates daily aggregated statistics
+-- --------------------------------------------
+CREATE OR REPLACE FUNCTION update_daily_metrics()
+RETURNS TRIGGER AS $$
+DECLARE
+    target_date DATE;
+BEGIN
+    target_date := CURRENT_DATE;
+    
+    -- Ensure a row exists for today
+    INSERT INTO daily_metrics (metric_date)
+    VALUES (target_date)
+    ON CONFLICT (metric_date) DO NOTHING;
+    
+    -- Update the metrics
+    UPDATE daily_metrics
+    SET
+        total_revenue = (SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE DATE(created_at) = target_date),
+        cash_revenue = (SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE DATE(created_at) = target_date AND payment_status = 'CASH'),
+        credit_revenue = (SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE DATE(created_at) = target_date AND payment_status = 'CREDIT'),
+        total_sales_count = (SELECT COUNT(*) FROM sales WHERE DATE(created_at) = target_date),
+        total_blocks_sold = (SELECT COALESCE(SUM(quantity_blocks), 0) FROM sales WHERE DATE(created_at) = target_date),
+        blocks_produced = (SELECT COALESCE(SUM(quantity_produced), 0) FROM production_logs WHERE production_date = target_date),
+        blocks_wasted = (SELECT COALESCE(SUM(waste_blocks), 0) FROM production_logs WHERE production_date = target_date),
+        fuel_cost = (SELECT COALESCE(SUM(total_cost), 0) FROM fuel_logs WHERE fuel_date = target_date),
+        fuel_liters = (SELECT COALESCE(SUM(liters_added), 0) FROM fuel_logs WHERE fuel_date = target_date),
+        other_expenses = (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE expense_date = target_date AND category != 'FUEL'),
+        updated_at = NOW()
+    WHERE metric_date = target_date;
+    
+    -- Calculate derived metrics
+    UPDATE daily_metrics
+    SET
+        total_expenses = fuel_cost + other_expenses,
+        gross_profit = total_revenue - fuel_cost - other_expenses,
+        net_liquidity = cash_revenue - fuel_cost - other_expenses,
+        average_sale_value = CASE WHEN total_sales_count > 0 THEN total_revenue / total_sales_count ELSE 0 END,
+        cost_per_block = CASE WHEN total_blocks_sold > 0 THEN (fuel_cost + other_expenses) / total_blocks_sold ELSE 0 END,
+        fuel_efficiency = CASE WHEN blocks_produced > 0 THEN fuel_liters / blocks_produced ELSE 0 END,
+        production_efficiency = CASE WHEN blocks_produced > 0 THEN ((blocks_produced - blocks_wasted)::DECIMAL / blocks_produced) * 100 ELSE 0 END
+    WHERE metric_date = target_date;
+    
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- --------------------------------------------
+-- 4.5 Calculate Waste Percentage
+-- Auto-calculates waste percentage on production logs
+-- --------------------------------------------
+CREATE OR REPLACE FUNCTION calculate_waste_percentage()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.quantity_produced > 0 THEN
+        NEW.waste_percentage := (NEW.waste_blocks::DECIMAL / NEW.quantity_produced) * 100;
+    ELSE
+        NEW.waste_percentage := 0;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- ============================================
+-- STEP 5: CREATE TRIGGERS
+-- ============================================
+
+-- Drop existing triggers first (to avoid duplicates)
+DROP TRIGGER IF EXISTS trigger_update_customer_credit ON sales;
+DROP TRIGGER IF EXISTS trigger_update_credit_after_payment ON payments;
+DROP TRIGGER IF EXISTS trigger_check_fuel_efficiency ON fuel_logs;
+DROP TRIGGER IF EXISTS trigger_calculate_waste ON production_logs;
+DROP TRIGGER IF EXISTS trigger_update_metrics_on_sale ON sales;
+DROP TRIGGER IF EXISTS trigger_update_metrics_on_fuel ON fuel_logs;
+DROP TRIGGER IF EXISTS trigger_update_metrics_on_production ON production_logs;
+DROP TRIGGER IF EXISTS trigger_update_metrics_on_expense ON expenses;
+
+-- 5.1 Trigger: Update customer credit after sale
+CREATE TRIGGER trigger_update_customer_credit
+AFTER INSERT ON sales
+FOR EACH ROW
+EXECUTE FUNCTION update_customer_credit();
+
+-- 5.2 Trigger: Update customer credit after payment
+CREATE TRIGGER trigger_update_credit_after_payment
+AFTER INSERT ON payments
+FOR EACH ROW
+EXECUTE FUNCTION update_credit_after_payment();
+
+-- 5.3 Trigger: Check fuel efficiency
+CREATE TRIGGER trigger_check_fuel_efficiency
+BEFORE INSERT OR UPDATE ON fuel_logs
+FOR EACH ROW
+EXECUTE FUNCTION check_fuel_efficiency();
+
+-- 5.4 Trigger: Calculate waste percentage
+CREATE TRIGGER trigger_calculate_waste
+BEFORE INSERT OR UPDATE ON production_logs
+FOR EACH ROW
+EXECUTE FUNCTION calculate_waste_percentage();
+
+-- 5.5 Triggers: Update daily metrics
+CREATE TRIGGER trigger_update_metrics_on_sale
+AFTER INSERT OR UPDATE OR DELETE ON sales
+FOR EACH STATEMENT
+EXECUTE FUNCTION update_daily_metrics();
+
+CREATE TRIGGER trigger_update_metrics_on_fuel
+AFTER INSERT OR UPDATE OR DELETE ON fuel_logs
+FOR EACH STATEMENT
+EXECUTE FUNCTION update_daily_metrics();
+
+CREATE TRIGGER trigger_update_metrics_on_production
+AFTER INSERT OR UPDATE OR DELETE ON production_logs
+FOR EACH STATEMENT
+EXECUTE FUNCTION update_daily_metrics();
+
+CREATE TRIGGER trigger_update_metrics_on_expense
+AFTER INSERT OR UPDATE OR DELETE ON expenses
+FOR EACH STATEMENT
+EXECUTE FUNCTION update_daily_metrics();
+
+
+-- ============================================
+-- STEP 6: ROW LEVEL SECURITY (RLS)
+-- ============================================
+
+-- Enable RLS on all tables
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fuel_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE production_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE daily_metrics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE alerts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies (to avoid duplicates)
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON customers;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON sales;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON payments;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON expenses;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON fuel_logs;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON production_logs;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON daily_metrics;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON alerts;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON inventory;
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON audit_log;
+
+DROP POLICY IF EXISTS "Service role full access" ON customers;
+DROP POLICY IF EXISTS "Service role full access" ON sales;
+DROP POLICY IF EXISTS "Service role full access" ON payments;
+DROP POLICY IF EXISTS "Service role full access" ON expenses;
+DROP POLICY IF EXISTS "Service role full access" ON fuel_logs;
+DROP POLICY IF EXISTS "Service role full access" ON production_logs;
+DROP POLICY IF EXISTS "Service role full access" ON daily_metrics;
+DROP POLICY IF EXISTS "Service role full access" ON alerts;
+DROP POLICY IF EXISTS "Service role full access" ON inventory;
+DROP POLICY IF EXISTS "Service role full access" ON audit_log;
+
+DROP POLICY IF EXISTS "Public read access" ON customers;
+DROP POLICY IF EXISTS "Public read access" ON sales;
+DROP POLICY IF EXISTS "Public read access" ON daily_metrics;
+
+-- Policies for authenticated users
+CREATE POLICY "Allow all for authenticated users" ON customers FOR ALL USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow all for authenticated users" ON sales FOR ALL USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow all for authenticated users" ON payments FOR ALL USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow all for authenticated users" ON expenses FOR ALL USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow all for authenticated users" ON fuel_logs FOR ALL USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow all for authenticated users" ON production_logs FOR ALL USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow all for authenticated users" ON daily_metrics FOR ALL USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow all for authenticated users" ON alerts FOR ALL USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow all for authenticated users" ON inventory FOR ALL USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow all for authenticated users" ON audit_log FOR ALL USING (auth.role() = 'authenticated');
+
+-- Policies for service role (backend API)
+CREATE POLICY "Service role full access" ON customers FOR ALL USING (auth.jwt()->>'role' = 'service_role');
+CREATE POLICY "Service role full access" ON sales FOR ALL USING (auth.jwt()->>'role' = 'service_role');
+CREATE POLICY "Service role full access" ON payments FOR ALL USING (auth.jwt()->>'role' = 'service_role');
+CREATE POLICY "Service role full access" ON expenses FOR ALL USING (auth.jwt()->>'role' = 'service_role');
+CREATE POLICY "Service role full access" ON fuel_logs FOR ALL USING (auth.jwt()->>'role' = 'service_role');
+CREATE POLICY "Service role full access" ON production_logs FOR ALL USING (auth.jwt()->>'role' = 'service_role');
+CREATE POLICY "Service role full access" ON daily_metrics FOR ALL USING (auth.jwt()->>'role' = 'service_role');
+CREATE POLICY "Service role full access" ON alerts FOR ALL USING (auth.jwt()->>'role' = 'service_role');
+CREATE POLICY "Service role full access" ON inventory FOR ALL USING (auth.jwt()->>'role' = 'service_role');
+CREATE POLICY "Service role full access" ON audit_log FOR ALL USING (auth.jwt()->>'role' = 'service_role');
+
+
+-- ============================================
+-- STEP 7: SEED DATA
+-- ============================================
+
+-- --------------------------------------------
+-- 7.1 Sample Customers
+-- --------------------------------------------
+INSERT INTO customers (name, phone_number, email, total_credit_due, credit_limit, risk_level) VALUES
+('Abdullahi Ali', '+211 912 345 678', 'abdullahi@example.com', 125000, 10000000, 'LOW'),
+('Hassan Mahmoud', '+211 922 111 222', 'hassan@example.com', 450000, 10000000, 'MEDIUM'),
+('Zahra Farah', '+211 955 888 777', 'zahra@example.com', 0, 10000000, 'LOW'),
+('Mustafa Osman', '+211 911 000 999', 'mustafa@example.com', 85000, 10000000, 'LOW'),
+('Ahmed Ibrahim', '+211 918 765 432', 'ahmed@example.com', 320000, 10000000, 'MEDIUM'),
+('Fatima Hassan', '+211 925 333 444', 'fatima@example.com', 0, 10000000, 'LOW'),
+('Omar Yusuf', '+211 933 555 666', 'omar@example.com', 750000, 10000000, 'HIGH'),
+('Amina Mohamed', '+211 944 777 888', 'amina@example.com', 50000, 10000000, 'LOW'),
+('Walk-in Customer', 'N/A', NULL, 0, 0, 'LOW')
+ON CONFLICT DO NOTHING;
+
+-- --------------------------------------------
+-- 7.2 Initialize Daily Metrics for Today
+-- --------------------------------------------
+INSERT INTO daily_metrics (metric_date)
+VALUES (CURRENT_DATE)
+ON CONFLICT (metric_date) DO NOTHING;
+
+-- --------------------------------------------
+-- 7.3 Initial Inventory Items
+-- --------------------------------------------
+INSERT INTO inventory (item_name, current_stock, minimum_stock, unit) VALUES
+('Ice Blocks', 0, 50, 'blocks'),
+('Diesel Fuel', 0, 100, 'liters'),
+('Packaging Bags', 0, 200, 'pieces')
+ON CONFLICT DO NOTHING;
+
+
+-- ============================================
+-- STEP 8: VERIFICATION QUERIES
+-- ============================================
+-- Run these to verify the setup is complete
+
+-- Check all tables exist
+SELECT table_name 
+FROM information_schema.tables 
+WHERE table_schema = 'public' 
+AND table_type = 'BASE TABLE'
+ORDER BY table_name;
+
+-- Check customer count
+SELECT COUNT(*) as customer_count FROM customers;
+
+-- Check today's metrics
+SELECT * FROM daily_metrics WHERE metric_date = CURRENT_DATE;
+
+
+-- ============================================
+-- SETUP COMPLETE!
+-- ============================================
+-- 
+-- Your database now has:
+-- - 10 tables (customers, sales, payments, expenses, fuel_logs, production_logs, daily_metrics, alerts, inventory, audit_log)
+-- - 2 views (dashboard_summary, customer_risk_summary)
+-- - 5 functions (update_customer_credit, update_credit_after_payment, check_fuel_efficiency, update_daily_metrics, calculate_waste_percentage)
+-- - 8 triggers (auto-update credits, efficiency alerts, daily metrics)
+-- - RLS policies for security
+-- - Sample data for testing
+--
+-- Next steps:
+-- 1. Verify tables in Supabase Table Editor
+-- 2. Configure backend .env with Supabase credentials
+-- 3. Start backend server
+-- 4. Test the application
+--
+

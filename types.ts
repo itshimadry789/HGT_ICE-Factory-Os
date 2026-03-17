@@ -4,6 +4,10 @@ export interface Customer {
   name: string;
   phone_number: string;
   total_credit_due: number;
+  oldest_credit_date?: string; // Date when the oldest unpaid credit was taken
+  last_payment_date?: string;
+  days_overdue?: number;
+  risk_level?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 }
 
 export enum PaymentStatus {
@@ -24,8 +28,9 @@ export interface Sale {
 export enum ExpenseCategory {
   FUEL = 'FUEL',
   FOOD = 'FOOD',
-  SALARY = 'SALARY',
-  MAINTENANCE = 'MAINTENANCE'
+  MAINTENANCE = 'MAINTENANCE',
+  SUPPLIES = 'SUPPLIES',
+  OTHER = 'OTHER'
 }
 
 export interface Expense {
@@ -34,6 +39,25 @@ export interface Expense {
   description: string;
   amount: number;
   currency: string;
+  expense_date?: string;
+  created_at: string;
+}
+
+export enum FixedCostCategory {
+  SALARY = 'SALARY',
+  UTILITIES = 'UTILITIES',
+  RENT = 'RENT',
+  SECURITY = 'SECURITY',
+  OTHER = 'OTHER'
+}
+
+export interface FixedCost {
+  id: string;
+  category: FixedCostCategory;
+  description: string;
+  amount: number;
+  currency: string;
+  cost_date?: string;
   created_at: string;
 }
 
@@ -43,6 +67,7 @@ export interface FuelLog {
   cost_per_liter: number;
   generator_hours_run: number;
   total_cost: number;
+  fuel_date?: string;
   created_at: string;
 }
 
@@ -50,8 +75,17 @@ export interface ProductionLog {
   id: string;
   quantity_produced: number;
   shift: string; // e.g. 'Day', 'Night'
+  production_date?: string;
   notes?: string;
   created_at: string;
 }
 
-export type ViewState = 'DASHBOARD' | 'NEW_SALE' | 'LOG_FUEL' | 'ADD_EXPENSE' | 'REPORTS' | 'CUSTOMERS' | 'PRODUCTION_LOG';
+export type ViewState =
+  | 'DASHBOARD'
+  | 'NEW_SALE'
+  | 'LOG_FUEL'
+  | 'ADD_EXPENSE'
+  | 'FIXED_COSTS'
+  | 'REPORTS'
+  | 'CUSTOMERS'
+  | 'PRODUCTION_LOG';

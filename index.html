@@ -5,7 +5,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hanaano | Factory OS</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=3">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=3">
+    <link rel="icon" type="image/png" href="/favicon.png?v=3">
+    <link rel="shortcut icon" type="image/png" href="/favicon.png?v=3">
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon-square.png?v=3">
+    <meta name="theme-color" content="#10B981">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
     <style>
         body {
@@ -27,9 +35,10 @@
             transform: translateY(-2px);
         }
         .sidebar-active {
-            background: #f0f9ff;
-            color: #0284c7 !important;
-            border-right: 3px solid #0284c7;
+            background: linear-gradient(to right, rgba(251, 191, 36, 0.1), rgba(20, 184, 166, 0.1), rgba(37, 99, 235, 0.1));
+            color: #14b8a6 !important;
+            border-right: 3px solid transparent;
+            border-image: linear-gradient(to bottom, #f59e0b, #14b8a6, #2563eb) 1;
         }
         .monospaced {
             font-family: 'JetBrains Mono', monospace;
@@ -57,20 +66,96 @@
             margin-top: 1.5rem;
             padding-left: 1.5rem;
         }
+        /* Custom Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes scaleIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 200ms ease-in-out;
+        }
+        .animate-scale-in {
+            animation: scaleIn 200ms ease-in-out;
+        }
+        .animate-slide-up {
+            animation: slideUp 300ms ease-out;
+        }
+
+        /* ============================
+           Dark mode overrides
+        ============================ */
+        body.dark {
+            background-color: #020617;
+            color: #e5e7eb;
+        }
+
+        body.dark .nexus-card {
+            background: #020617;
+            border-color: #1f2937;
+            box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.5), 0 1px 2px 0 rgba(15, 23, 42, 0.4);
+        }
+
+        body.dark .sidebar-active {
+            background: linear-gradient(to right, rgba(251, 191, 36, 0.15), rgba(20, 184, 166, 0.25), rgba(37, 99, 235, 0.25));
+            color: #e5e7eb !important;
+            border-image: linear-gradient(to bottom, #facc15, #2dd4bf, #3b82f6) 1;
+        }
+
+        /* Common background overrides */
+        body.dark .bg-white {
+            background-color: #020617 !important;
+        }
+        body.dark .bg-slate-50,
+        body.dark .bg-[#f8fafc] {
+            background-color: #020617 !important;
+        }
+
+        /* Common border overrides */
+        body.dark .border-slate-100,
+        body.dark .border-slate-200 {
+            border-color: #1f2937 !important;
+        }
+
+        /* Text color overrides (preserve hierarchy but keep strong contrast) */
+        body.dark .text-slate-900 {
+            color: #f9fafb !important; /* main headings */
+        }
+        body.dark .text-slate-700,
+        body.dark .text-slate-600 {
+            color: #e5e7eb !important; /* primary text */
+        }
+        body.dark .text-slate-500 {
+            color: #d1d5db !important; /* secondary text */
+        }
+        body.dark .text-slate-400 {
+            color: #9ca3af !important; /* subtle labels */
+        }
+
+        /* Inputs */
+        body.dark input,
+        body.dark textarea,
+        body.dark select {
+            background-color: #020617 !important;
+            color: #e5e7eb !important;
+            border-color: #1f2937 !important;
+        }
+
+        /* Tables */
+        body.dark thead.bg-slate-50 {
+            background-color: #020617 !important;
+        }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "recharts": "https://esm.sh/recharts@^3.6.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
-  }
-}
-</script>
 </head>
 <body class="overflow-x-hidden">
     <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
 </body>
 </html>
